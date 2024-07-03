@@ -4,6 +4,8 @@
 #ifndef ARMOR_DETECTOR__DETECTOR_HPP_
 #define ARMOR_DETECTOR__DETECTOR_HPP_
 
+#include <rclcpp/rclcpp.hpp>
+
 // OpenCV
 #include <opencv2/core.hpp>
 #include <opencv2/core/types.hpp>

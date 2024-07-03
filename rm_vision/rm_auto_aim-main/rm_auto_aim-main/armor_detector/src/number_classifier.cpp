@@ -72,6 +72,8 @@ void NumberClassifier::extractNumbers(const cv::Mat & src, std::vector<Armor> & 
     number_image =
       number_image(cv::Rect(cv::Point((warp_width - roi_size.width) / 2, 0), roi_size));
 
+    //To avoid RFID's LED Lights  
+    cv::rectangle(number_image,cv::Rect2d(0,number_image.size().height-2,number_image.size().width,2),{0,0,0});
     // Binarize
     cv::cvtColor(number_image, number_image, cv::COLOR_RGB2GRAY);
     cv::threshold(number_image, number_image, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);

@@ -37,6 +37,8 @@ namespace rm_serial_driver
     // // Camera_choice Publisher
     // camera_choice_publisher = this->create_publisher<std_msgs::msg::Int64>("camera_choice", 10);
 
+    yaw_pub_ = this->create_publisher<std_msgs::msg::Float64>("/robo_yaw", 10);
+    sentry_decision_pub_ = this->create_publisher<std_msgs::msg::Int8>("sentry_decision",10);
     // TF broadcaster
     timestamp_offset_ = this->declare_parameter("timestamp_offset", 0.0);
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
@@ -50,7 +52,7 @@ namespace rm_serial_driver
 
     // Tracker reset service client
     reset_tracker_client_ = this->create_client<std_srvs::srv::Trigger>("/tracker/reset");
-
+    // debug_msg = this->create_publisher<>
     try
     {
       serial_driver_->init_port(device_name_, *device_config_);
@@ -125,14 +127,8 @@ namespace rm_serial_driver
           bool crc_ok =
               crc16::Verify_CRC16_Check_Sum(reinterpret_cast<const uint8_t *>(&packet), sizeof(packet));
           if (crc_ok)
+          
           {
-
-          // if (packet.camera_choice_ != previous_camera)
-          // {
-          //   camera_msg.data = packet.camera_choice_;
-          //   camera_choice_publisher->publish(camera_msg);
-          //   previous_camera = packet.camera_choice_;
-          // }
 
           if (!initial_set_param_color || packet.detect_color != previous_receive_color_)
           {
@@ -152,24 +148,20 @@ namespace rm_serial_driver
           t.child_frame_id = "gimbal_link";
           tf2::Quaternion q;
 
-          q.setRPY(packet.roll/57.325, -packet.pitch/57.325, packet.yaw/57.325);  
-          // q.setRPY(packet.pitch/57.325, -packet.roll/57.325, packet.yaw/57.325);
+          q.setRPY(packet.roll/57.2957795, -packet.pitch/57.2957795, packet.yaw/57.2957795);
 
-          std::cout << packet.roll;
-          std::cout << -packet.pitch;
-          std::cout << packet.yaw;
+          yaw_msg.data = packet.yaw/57.2957;
+          sentry_decision_msg.data = packet.sentry_decision;
+          yaw_pub_->publish(yaw_msg);
+          sentry_decision_pub_->publish(sentry_decision_msg);
+          //std::cout <<packet.roll<<std::endl;
+          //std::cout << -packet.pitch<<std::endl;
+          //std::cout << packet.yaw<<std::endl;
 
           t.transform.rotation = tf2::toMsg(q);
           tf_broadcaster_->sendTransform(t);
 
-          // if (abs(packet.aim_x) > 0.01)
-          // {
-          //   aiming_point_.header.stamp = this->now();
-          //   aiming_point_.pose.position.x = packet.aim_x;
-          //   aiming_point_.pose.position.y = packet.aim_y;
-          //   aiming_point_.pose.position.z = packet.aim_z;
-          //   marker_pub_->publish(aiming_point_);
-          // }
+
         }
         else
         {
@@ -197,11 +189,14 @@ void RMSerialDriver::sendData(const auto_aim_interfaces::msg::Target::SharedPtr 
 
   try
   {
-    aiming_point_.pose.position.x = msg->aim_x;
-    aiming_point_.pose.position.y = msg->aim_y;
-    aiming_point_.pose.position.z = msg->aim_z;
-    if (abs(aiming_point_.pose.position.x) > 0.01)
+    // aiming_point_.pose.position.x = msg->aim_x;
+    // aiming_point_.pose.position.y = msg->aim_y;
+    // aiming_point_.pose.position.z = msg->aim_z;
+    if (abs(msg->aim_x) > 0.01)
     {
+      aiming_point_.pose.position.x = msg->aim_x;
+      aiming_point_.pose.position.y = msg->aim_y;
+      aiming_point_.pose.position.z = msg->aim_z;
       aiming_point_.header.stamp = this->now();
       marker_pub_->publish(aiming_point_);
     }
@@ -212,24 +207,11 @@ void RMSerialDriver::sendData(const auto_aim_interfaces::msg::Target::SharedPtr 
     packet.yaw = msg->pre_yaw;
     packet.pitch = msg->pre_pitch;
     packet.fire = msg->fire;
+    packet.v_yaw = msg->v_yaw;
 
     
     crc16::Append_CRC16_Check_Sum(reinterpret_cast<uint8_t *>(&packet), sizeof(packet));
 
-//////////////////////////////////////
-    // PredictPitchXY &trajectory = PredictPitchXY::getinstance();
-
-    // new_SendPacket new_packet;
-    // new_packet.tracking = msg->tracking;
-    // new_packet.id = id_unit8_map.at(msg->id);
-    // new_packet.armors_num = msg->armors_num;
-    // new_packet.yaw = msg->yaw;
-    // new_packet.pitch = trajectory(16, 20, 2);
-    // crc16::Append_CRC16_Check_Sum(reinterpret_cast<uint8_t *>(&new_packet), sizeof(new_packet));
-
-    // std::vector<uint8_t> data = toVector(new_packet);
-
-/////////////////////////////////////////
     std::vector<uint8_t> data = toVector(packet);
     serial_driver_->port()->send(data);
 

@@ -28,19 +28,17 @@ void PredictPitchXY::InitPredictPitch(float bulletSpeedNow, double distance, flo
 double PredictPitchXY::dropshotRK45()
 {
   double error = 0;
-  theta = 15 * 3.14 / 180.0;  // 初始化角度
+  theta = 5 * 3.14 / 180.0;  // 初始化角度
   for (int i = 0; i < maxstep; i++)
   {  // 设置最大步长
     // 初始化
 
     time_acc = 0;
     theta_d = theta;  // 将theta赋给过程量
-    // X_d = 0.17 * cos(theta_d);         // 枪管水平长度
-    // Y_d = 0.424 + 0.17 * sin(theta_d); // 枪管垂直高度
-    X_d = 0.115 * cos(theta_d);  // 2024步兵枪管水平长度
-    Y_d = 0.115 * sin(theta_d);  // 2024步兵枪管垂直高度
+    X_d = 0.20* cos(theta_d);   // 2024infantry枪管相对于云台中心的水平长度
+    Y_d = 0.20* sin(theta_d) ;  // 2024infantry枪管相对于云台中心的垂直高度
     v0_d = v0now;
-    // double x_step=(X_r-X_d)/step;//迭代步长
+
     double time_step = 0.0004;  // 时间步长
 
     while (X_d < X_r)  // 迭代
@@ -108,7 +106,7 @@ double PredictPitchXY::dropshotRK45()
       time_acc += time_step;
       if (abs(theta_d) > limit_pitch)
       {
-        if (over_limit_judge != 0 && abs(theta_d) > over_limit_judge)
+        if (over_limit_judge != 0 && fabsf(theta_d) > over_limit_judge)
         {
           theta_d = over_limit_judge;
           std::cout << " trajectory is over limit" << std::endl;
@@ -125,6 +123,7 @@ double PredictPitchXY::dropshotRK45()
       // std::cout << "..............................................." << std::endl;
       // std::cout << "theta:" << theta * 180 / 3.1415 << std::endl;
       // std::cout << "..............................................." << std::endl;
+      // std::cout <<"error:"<< error << std::endl;
       return theta;
     }  // 合适则输出本次迭代使用的theta
     else
@@ -141,73 +140,152 @@ double PredictPitchXY::dropshotRK45()
   return 0;
 }
 
+
+void PredictPitchXY::zero_cross_detector(float& yaw_diff){
+  if (yaw_diff > 5.7){
+    yaw_diff = 2*pi - yaw_diff;
+  }
+  
+}
+
 //一些参数
-// struct tar_pos tar_position[4];
-// float time_fly = 0.20f; // 飞行时间
-float stored_y = 0.0f;      //放全局里面方便调试查看
-float static_z = -0.05f;    //增大是往下
-float static_yaw = 0.000f;  // One degree = 0.01745 Radian，增大往左
-float bias_time = 30;
-const float armorYaw = 0.51;
+
 void PredictPitchXY::GimbalControlTransform(float xw, float yw, float zw, float vxw, float vyw, float vzw, float v_yaw,
-                                            float r1, float r2, float dz, int id, float yaw, float* aim_x, float* aim_y,
-                                            float* aim_z,int *fire)
+                                            float r1, float r2, float dz, int armors_num, float yaw, float* aim_x, float* aim_y,
+                                            float* aim_z,float *fire,float robo_yaw,float v)
 {
-  // float s_static = 0.10; //枪口前推的距离
-  // float z_static = static_z;//0.08f;//0.16; //yaw轴电机到枪口水平面的垂直距离 // FIXME: 是电机到枪口还是相机到枪口？
-
+  //距离偏置修正，一般不修，主要是角度问题
+  float static_x = 0.00;
+  float static_z = 0.00;
   // 线性预测
-  float timeDelay =  bias_time/1000 + time_acc;
-  //float timeDelay = 0;
-  float tar_yaw = yaw + v_yaw * timeDelay;
-  //  tar_yaw += v_yaw * timeDelay;
+  float algorithm_time = 25; //可以通过latency查看
+  float respond_time = 50;   //可以通过打小陀螺测试得到
+  if(fabsf(v_yaw) > 5){
+      //对于高速旋转的目标，采取秒准中心的策略，respond_time 理应更少
+      respond_time = 20;
+  }
+  // std::cout<<"respond_time:"<<respond_time<<std::endl;
+  float bias_time = algorithm_time + respond_time;  // bias_time 作为1、上位机 图像传输、算法解算；2、通信 传输耗时；3、下位机 拨弹响应、子弹加速 的趋于固定的时间损耗
+  float timeDelay =  bias_time/1000 + time_acc;//  time_acc--子弹飞行时间 
+  //当前相机观测到的装甲板相对于 odom坐标系 的坐标
+  float tar_yaw = yaw;
+  // 选择的装甲板
+  int idx = 0;  
 
-  //计算四块装甲板的位置
-  int use_1 = 1;
+  //以下 存在一个 大的 if else 判断 当检测到目标转速较低时瞄准摄像头看见的那块装甲板，高转速再建模预测
+  if(fabsf(v_yaw) < 3.0){
+    if(v > 0.08){ 
+      // std::cout<<"i am in here" << std::endl;
+      if(fabsf(v_yaw) < 1.8){
+        v_yaw = 0;
+      }
+      float vx = v_yaw * r1 * sin(tar_yaw);
+      float vy = -v_yaw * r1 * cos(tar_yaw);
+      pre_aim[0].x =xw  + vxw * timeDelay + vx * timeDelay;
+      pre_aim[0].y =yw  + vyw * timeDelay + vy * timeDelay;
+      pre_aim[0].z =zw  + vzw * timeDelay;
+      // pre_aim[0].x =xw  + vxw * timeDelay ;
+      // pre_aim[0].y =yw  + vyw * timeDelay ;
+      
+      pre_aim[0].yaw = tar_yaw + v_yaw * timeDelay;
+    }else{
+      // std::cout<<"i am in here" << std::endl;
+      float vx = v_yaw * r1 * sin(tar_yaw);
+      float vy = -v_yaw * r1 * cos(tar_yaw);
+      pre_aim[0].x =xw - r1 * cos(tar_yaw) + vxw * timeDelay + vx * timeDelay;
+      pre_aim[0].y =yw - r1 * sin(tar_yaw) + vyw * timeDelay + vy * timeDelay;
+      pre_aim[0].z =zw + vzw * timeDelay;
+      pre_aim[0].yaw = tar_yaw + v_yaw * timeDelay;
+    }
+  }else{
+  
+  
+  //装甲板建模预测
   int i = 0;
-  int idx = 0;  // 选择的装甲板
-  // armor_type = 1 为平衡步兵
-  if (id == 1)
+  // 根据装甲板数目建模
+  if (armors_num == 2)
   {
     for (i = 0; i < 2; i++)
     {
-      float tmp_yaw = tar_yaw + i * 3.14;
+      float tmp_yaw = tar_yaw + i * pi;    
       float r = r1;
-      // tar_position[i].x = xw- r*(1-cos(tmp_yaw));
-      tar_position[i].x = xw - r * (cos(tmp_yaw));
+      tar_position[i].x = xw - r * cos(tmp_yaw);
       tar_position[i].y = yw - r * sin(tmp_yaw);
       tar_position[i].z = zw;
-      tar_position[i].yaw = tar_yaw + i * 3.14;
-      pre_aim[i].x =tar_position[idx].x + vxw * timeDelay;
-      pre_aim[i].y =tar_position[idx].y + vyw * timeDelay;
-      pre_aim[i].z =tar_position[idx].z + vzw * timeDelay;
-      pre_aim[i].yaw = tar_position[idx].yaw + v_yaw * timeDelay;
+      tar_position[i].yaw = tar_yaw + i * 2 *pi / 2.0f;
+      if(tar_position[i].yaw > pi){
+        tar_position[i].yaw -=2 *pi;
+      }
+      float pre_tmp_yaw = tmp_yaw + v_yaw * timeDelay;
+      pre_aim[i].x =xw + vxw * timeDelay  - r * cos(pre_tmp_yaw);
+      pre_aim[i].y =yw + vyw * timeDelay  - r * sin(pre_tmp_yaw);
+      pre_aim[i].z =tar_position[i].z + vzw * timeDelay;
+      pre_aim[i].yaw = tar_position[i].yaw + v_yaw * timeDelay;
     }
-
-    float yaw_diff_min = fabsf(yaw - pre_aim[0].yaw);
-
-    //因为是平衡步兵 只需判断两块装甲板即可
-    float temp_yaw_diff = fabsf(yaw - pre_aim[1].yaw);
+    yaw_diff_min = fabsf(robo_yaw - pre_aim[0].yaw);
+    zero_cross_detector(yaw_diff_min);
+    // 因为是平衡步兵 只需判断两块装甲板即可
+    float temp_yaw_diff = fabsf(robo_yaw - pre_aim[1].yaw);
+    zero_cross_detector(temp_yaw_diff);
     if (temp_yaw_diff < yaw_diff_min)
     {
       yaw_diff_min = temp_yaw_diff;
       idx = 1;
     }
   }
-  else
+  // 0--outpost, 7--base
+  else if(armors_num == 3){
+      for (i = 0; i < 3; i++)
+    {
+      float tmp_yaw = tar_yaw + i *2* pi/3.0f;    
+      float r = r1;
+      tar_position[i].x = xw - r * cos(tmp_yaw);
+      tar_position[i].y = yw - r * sin(tmp_yaw);
+      tar_position[i].z = zw;
+      tar_position[i].yaw = tar_yaw + i * 2 *pi / 3.0f;
+      if(tar_position[i].yaw > pi){
+        tar_position[i].yaw -=2 *pi;
+      }
+      float pre_tmp_yaw = tmp_yaw + v_yaw * timeDelay;
+      pre_aim[i].x =xw + vxw * timeDelay  - r * cos(pre_tmp_yaw);
+      pre_aim[i].y =yw + vyw * timeDelay  - r * sin(pre_tmp_yaw);
+      pre_aim[i].z =tar_position[i].z + vzw * timeDelay;
+      pre_aim[i].yaw = tar_position[i].yaw + v_yaw * timeDelay;
+    }
+    //计算枪管到目标装甲板yaw最小的那个装甲板
+    yaw_diff_min = fabsf(robo_yaw - pre_aim[0].yaw);
+    zero_cross_detector(yaw_diff_min);
+    for (i = 1; i < 3; i++)
+    {
+      float temp_yaw_diff = fabsf(robo_yaw- pre_aim[i].yaw);
+      zero_cross_detector(temp_yaw_diff);
+      if (temp_yaw_diff < yaw_diff_min)
+      {
+        yaw_diff_min = temp_yaw_diff;
+        idx = i;
+      }
+    }
+  }
+  else    //除去以上特殊情况，其余皆为四块装甲板
   {
+      // std::cout<<"i am in here" << std::endl;
     for (i = 0; i < 4; i++)
     {
-      float tmp_yaw = tar_yaw + i * 3.14 / 2.0f;
+      float tmp_yaw = tar_yaw + i * pi / 2.0f;
       float r = use_1 ? r1 : r2;
       tar_position[i].x = xw - r * cos(tmp_yaw);
       tar_position[i].y = yw - r * sin(tmp_yaw);
       tar_position[i].z = use_1 ? zw : dz + zw;
-      tar_position[i].yaw = tar_yaw + i * 3.14 / 2.0f;
-      pre_aim[i].x =tar_position[idx].x + vxw * timeDelay;
-      pre_aim[i].y =tar_position[idx].y + vyw * timeDelay;
-      pre_aim[i].z =tar_position[idx].z + vzw * timeDelay;
-      pre_aim[i].yaw = tar_position[idx].yaw + v_yaw * timeDelay;
+      tar_position[i].yaw = tar_yaw + i * pi / 2.0f;
+      if(tar_position[i].yaw > pi){
+        tar_position[i].yaw -=2 *pi;
+      }
+
+      float pre_tmp_yaw = tmp_yaw + v_yaw * timeDelay;
+      pre_aim[i].x =xw + vxw * timeDelay  - r * cos(pre_tmp_yaw);
+      pre_aim[i].y =yw + vyw * timeDelay  - r * sin(pre_tmp_yaw);
+      pre_aim[i].z =tar_position[i].z + vzw * timeDelay;
+      pre_aim[i].yaw = tar_position[i].yaw + v_yaw * timeDelay;
       use_1 = !use_1;
     }
 
@@ -217,7 +295,7 @@ void PredictPitchXY::GimbalControlTransform(float xw, float yw, float zw, float 
 
     //计算距离最近的装甲板
     //	float dis_diff_min = sqrt(tar_position[0].x * tar_position[0].x + tar_position[0].y * tar_position[0].y);
-    //	int idx = 0;
+    //	int idx = 0;fire = pre_aim[idx].yaw;
     //	for (i = 1; i<4; i++)
     //	{
     //		float temp_dis_diff = sqrt(tar_position[i].x * tar_position[0].x + tar_position[i].y * tar_position[0].y);
@@ -230,10 +308,12 @@ void PredictPitchXY::GimbalControlTransform(float xw, float yw, float zw, float 
     //
 
     //计算枪管到目标装甲板yaw最小的那个装甲板
-    float yaw_diff_min = fabsf(yaw - pre_aim[0].yaw);
+    yaw_diff_min = fabsf(robo_yaw - pre_aim[0].yaw);
+    zero_cross_detector(yaw_diff_min);
     for (i = 1; i < 4; i++)
     {
-      float temp_yaw_diff = fabsf(yaw - pre_aim[i].yaw);
+      float temp_yaw_diff = fabsf(robo_yaw- pre_aim[i].yaw);
+      zero_cross_detector(temp_yaw_diff);
       if (temp_yaw_diff < yaw_diff_min)
       {
         yaw_diff_min = temp_yaw_diff;
@@ -242,18 +322,54 @@ void PredictPitchXY::GimbalControlTransform(float xw, float yw, float zw, float 
     }
   }
 
-    if(fabsf(pre_aim[idx].yaw) < 0.174)
+}
+
+
+//火控策略
+    *fire = 0;
+    // std::cout << "armor_yaw:" << pre_aim[idx].yaw << std::endl;
+    // std::cout << "robo_yaw:" << robo_yaw << std::endl;
+    // std::cout << "yaw_diff_min:" << fabsf(pre_aim[idx].yaw - robo_yaw) << std::endl;
+    // float r = use_1 ? r2 : r1;
+    // float test = (float)(atan2(0.03,r));
+    // std::cout << "r:" << r << std::endl;
+    // std::cout << "test:" << tar_position[0].x << std::endl;
+    
+    //开火逻辑判断 v_yaw<0.5作为一个静止误差，转动速率小于 0.5rad/s 视为静止,直接击打
+    //对于v_yaw在1.8rad/s以下的目标，主要是平移 加 一些慢速旋转，全力开火
+    if(fabsf(v_yaw)<1.8 )
     {
-      *fire = 1;
+      *fire = robo_yaw;
+      count++;
+      std::cout << "num:" << count<< std::endl;
+      if(count > 10000){
+        count = 0;
+      }
     }
-  *aim_x = pre_aim[idx].x;
-  *aim_y = pre_aim[idx].y;
-  *aim_z = pre_aim[idx].z;
+    else
+    {
+      // *fire = 10; 
+      *fire = pre_aim[idx].yaw; //把预测的目标装甲板相对于 odom坐标系的朝向角 发给下位机用于火控判断
+      std::cout<<"it the armor --"<< idx<<std::endl;
+      std::cout<<"it the armor2 --"<< pre_aim[0].yaw<<std::endl;
+      std::cout<<"it the armor3 --"<< pre_aim[1].yaw<<std::endl;
+    }
+    if(yaw_diff_min < 0.15 && fabsf(v_yaw) > 1.8){
+   //把预测的目标装甲板相对于 odom坐标系的朝向角 发给下位机用于火控判断
+        count++;
+      if(count > 10000){
+        count = 0;
+      }
+      std::cout << "num:" << count<< std::endl;
+    }
+    if(fabsf(v_yaw)>5){
+      static_z += 0.00;
+    }
+  //把 以为 原点的坐标系 修正到云台中心
+  *aim_x = pre_aim[idx].x - static_x;
+  *aim_y = pre_aim[idx].y ;
+  *aim_z = pre_aim[idx].z + static_z;
+  // *aim_z = tar_position[idx].x - static_x;
 
-  // *pitch =GimbalControlGetPitch(sqrt((*aim_x) * (*aim_x) + (*aim_y) * (*aim_y)) + s_static,
-  //           tar_position[idx].z - z_static, st.current_v);
-  //  *pitch = trajectory(15.7, distance, *aim_z);
 
-  //*pitch = (float)(atan2(*aim_z, *aim_x));
-  // *yaw = (float)(atan2(*aim_y, *aim_x)) + (static_yaw * (*aim_x) * 0.46);
 }

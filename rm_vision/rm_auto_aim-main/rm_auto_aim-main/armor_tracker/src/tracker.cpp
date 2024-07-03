@@ -40,9 +40,13 @@ void Tracker::init(const Armors::SharedPtr & armors_msg)
     if (armor.distance_to_image_center < min_distance) {
       min_distance = armor.distance_to_image_center;
       tracked_armor = armor;
+      }  
     }
-  }
-
+    // for (const auto & armor : armors_msg->armors) {
+    //   if(armor.number == "1"){
+    //     tracked_armor = armor;
+    //   }
+    // }
   initEKF(tracked_armor);
   RCLCPP_DEBUG(rclcpp::get_logger("armor_tracker"), "Init EKF!");
 
@@ -188,6 +192,7 @@ void Tracker::handleArmorJump(const Armor & current_armor)
   updateArmorsNum(current_armor);
   // Only 4 armors has 2 radius and height
   if (tracked_armors_num == ArmorsNum::NORMAL_4) {
+    std::cout<<"dz:"<<current_armor.pose.position.z<<std::endl;
     dz = target_state(4) - current_armor.pose.position.z;
     target_state(4) = current_armor.pose.position.z;
     std::swap(target_state(8), another_r);
@@ -225,6 +230,8 @@ double Tracker::orientationToYaw(const geometry_msgs::msg::Quaternion & q)
   last_yaw_ = yaw;
   return yaw;
 }
+
+
 
 Eigen::Vector3d Tracker::getArmorPositionFromState(const Eigen::VectorXd & x)
 {

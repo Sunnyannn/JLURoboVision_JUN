@@ -60,6 +60,7 @@ public:
 
     bool use_sensor_data_qos = this->declare_parameter("use_sensor_data_qos", true);
     auto qos = use_sensor_data_qos ? rmw_qos_profile_sensor_data : rmw_qos_profile_default;
+    //auto qos = rmw_qos_profile_default;
     camera_pub_ = image_transport::create_camera_publisher(this, "image_raw", qos);
 
     declareParameters();
@@ -193,6 +194,15 @@ private:
       RCLCPP_ERROR(this->get_logger(), "Failed to set exposure time, status = %d", status);
     }
 
+
+    //White balance
+    status = GXSetEnum(camera_handle_, GX_ENUM_BALANCE_WHITE_AUTO, GX_BALANCE_WHITE_AUTO_CONTINUOUS); // Open White Balance Continuously
+    if (!GX_SUCCESS(status)) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to Open White Balance Continuously, status = %d", status);
+    }
+
+
+
     // Gain
     param_desc.description = "Gain";
     GXGetFloat(camera_handle_, GX_FLOAT_GAIN, &f_value);
@@ -200,7 +210,7 @@ private:
     param_desc.integer_range[0].from_value = f_range.dMin;
     param_desc.integer_range[0].to_value = f_range.dMax;
     RCLCPP_INFO(this->get_logger(), "Gain: %f, range %f ~ %f", f_value, f_range.dMin, f_range.dMax);
-    double gain = this->declare_parameter("gainn", f_value, param_desc);
+    double gain = this->declare_parameter("gain", f_value, param_desc);
     status = GXSetEnum(camera_handle_, GX_ENUM_GAIN_AUTO, GX_GAIN_AUTO_OFF); // Disable auto gain
     if (!GX_SUCCESS(status)) {
       RCLCPP_ERROR(this->get_logger(), "Failed to disable auto gain, status = %d", status);
@@ -230,7 +240,7 @@ private:
             result.successful = false;
             result.reason = "Failed to set exposure time, status = " + std::to_string(status);
           }
-        } else if (param.get_name() == "gainn") {
+        } else if (param.get_name() == "gain") {
           status = GXSetFloat(camera_handle_, GX_FLOAT_GAIN, param.as_double());
           if (!GX_SUCCESS(status)) {
             result.successful = false;

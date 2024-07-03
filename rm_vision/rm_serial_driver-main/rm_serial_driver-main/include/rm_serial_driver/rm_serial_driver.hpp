@@ -13,6 +13,7 @@
 #include <serial_driver/serial_driver.hpp>
 #include <std_msgs/msg/float64.hpp>
 #include <std_msgs/msg/int64.hpp>
+#include <std_msgs/msg/int8.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 
@@ -78,6 +79,19 @@ private:
 
   std::thread receive_thread_;
 
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr yaw_pub_;
+  rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr sentry_decision_pub_;
+
+  std_msgs::msg::Float64 yaw_msg;
+  std_msgs::msg::Int8 sentry_decision_msg;
+
+  //  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr test_pub_;
+
+  // std_msgs::msg::Float64 test_msg;
+
+  //   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr pitch_pub_;
+
+  // std_msgs::msg::Float64 pitch_msg;
 
   // rclcpp::Publisher<std_msgs::msg::Int64>::SharedPtr camera_choice_publisher;
 

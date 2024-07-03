@@ -9,6 +9,9 @@
 #include <tf2_ros/create_timer_ros.h>
 #include <tf2_ros/message_filter.h>
 #include <tf2_ros/transform_listener.h>
+#include <std_msgs/msg/float64.hpp>
+#include <std_msgs/msg/int8.hpp>
+
 
 #include <rclcpp/rclcpp.hpp>
 #include <std_srvs/srv/trigger.hpp>
@@ -36,6 +39,10 @@ public:
 private:
   void armorsCallback(const auto_aim_interfaces::msg::Armors::SharedPtr armors_ptr);
 
+  void yawCallback(const std_msgs::msg::Float64 msg);
+
+  void sentryCallback(const std_msgs::msg::Int8 msg);
+
   void publishMarkers(const auto_aim_interfaces::msg::Target & target_msg);
 
   // Maximum allowable armor distance in the XOY plane
@@ -46,6 +53,10 @@ private:
   double dt_;
 
   // Armor tracker
+  double last_pre_yaw;
+  double pitch_diff;
+  double yaw_diff;
+
   double s2qxyz_, s2qyaw_, s2qr_;
   double r_xyz_factor, r_yaw;
   double lost_time_thres_;
@@ -53,6 +64,15 @@ private:
 
   // Reset tracker service
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_tracker_srv_;
+
+  ///////
+  int   sentry_decision = 0;//用于判断哨兵击打策略
+  int   armors_num = 4;   //用于击打目标建模
+  float robo_yaw=0;   //储存下位机回传的当前yaw值
+  float diff_control; // 控制因为距离带来的pnp垂直误差
+  float yaw_control = 0; //用于人工控制yaw
+  float spinning_diff = 0.0; //用于判断敌方是否为小陀螺，更改开火逻辑
+  
 
   // Subscriber with tf2 message_filter
   std::string target_frame_;
@@ -91,8 +111,14 @@ private:
       float get_velocity_z= 0;
       float get_v_yaw = 0;
       float get_r1 = 0;
-      int *fire = new int;
+      float *fire = new float;
   };
+
+  rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr yaw_sub_;
+  rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr sentry_decision_sub_;
+
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr test_pub_;
+  std_msgs::msg::Float64 test_msg;
 };
 
 }  // namespace rm_auto_aim

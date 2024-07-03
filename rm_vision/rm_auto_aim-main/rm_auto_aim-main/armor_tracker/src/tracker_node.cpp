@@ -14,10 +14,20 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
 {
   RCLCPP_INFO(this->get_logger(), "Starting TrackerNode!");
 
+  yaw_sub_ = this->create_subscription<std_msgs::msg::Float64>(
+    "/robo_yaw", 10,std::bind(&ArmorTrackerNode::yawCallback, this, std::placeholders::_1));
+  
+  sentry_decision_sub_ = this->create_subscription<std_msgs::msg::Int8>(
+    "/sentry_decision", 10,std::bind(&ArmorTrackerNode::sentryCallback,this,std::placeholders::_1));
+
+  // RCLCPP_INFO(this->get_logger(), "Getting Robo_yaw ");
   // Maximum allowable armor distance in the XOY plane
   max_armor_distance_ = this->declare_parameter("max_armor_distance", 10.0);
 
   // Tracker
+  spinning_diff = this->declare_parameter("tracker.spinning_diff",0.2);
+  pitch_diff = this->declare_parameter("tracker.pitch_diff",0.0);
+  yaw_diff = this->declare_parameter("tracker.yaw_diff",0.0);
   double max_match_distance = this->declare_parameter("tracker.max_match_distance", 0.15);
   double max_match_yaw_diff = this->declare_parameter("tracker.max_match_yaw_diff", 1.0);
   tracker_ = std::make_unique<Tracker>(max_match_distance, max_match_yaw_diff);
@@ -152,6 +162,10 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
   // Publisher
   target_pub_ = this->create_publisher<auto_aim_interfaces::msg::Target>(
     "/tracker/target", rclcpp::SensorDataQoS());
+  
+  //////
+  test_pub_ = this->create_publisher<std_msgs::msg::Float64>("/test", 10);
+
 
   // Visualization Marker Publisher
   // See http://wiki.ros.org/rviz/DisplayTypes/Marker
@@ -183,6 +197,15 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
   marker_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/tracker/marker", 10);
 }
 
+void ArmorTrackerNode::yawCallback(const std_msgs::msg::Float64 msg)
+{
+  robo_yaw =msg.data;
+}
+void ArmorTrackerNode::sentryCallback(const std_msgs::msg::Int8 msg)
+{
+  sentry_decision = msg.data;
+}
+
 void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::SharedPtr armors_msg)
 {
   // Tranform armor position from image frame to world coordinate
@@ -208,6 +231,19 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
                  max_armor_distance_;
       }),
     armors_msg->armors.end());
+  // Filter sentry armors depend on actual situation 
+  if( sentry_decision == 0){
+     armors_msg->armors.erase(
+    std::remove_if(
+      armors_msg->armors.begin(), armors_msg->armors.end(),
+      [this](const auto_aim_interfaces::msg::Armor & armor) {
+        return armor.number == "guard";
+      }),
+    armors_msg->armors.end()); 
+  }
+    // for (const auto & armor : armors_msg->armors) {
+    //   std::cout<<"tracke: "<<armor.number<<std::endl;
+    // }
 
   // Init message
   auto_aim_interfaces::msg::TrackerInfo info_msg;
@@ -236,7 +272,6 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
 
     if (tracker_->tracker_state == Tracker::DETECTING) {
       target_msg.tracking = false;
-
     } else if (
       tracker_->tracker_state == Tracker::TRACKING ||
       tracker_->tracker_state == Tracker::TEMP_LOST) {
@@ -251,7 +286,6 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
       target_msg.velocity.y = state(3);
       target_msg.position.z = state(4);
       target_msg.velocity.z = state(5);
-      std::cout << "zhb_yaw:" << atan2(state(2) , state(0))*180/3.14<< std::endl;
       target_msg.yaw = state(6);
       target_msg.v_yaw = state(7);
       target_msg.radius_1 = state(8);
@@ -259,40 +293,147 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
       target_msg.dz = tracker_->dz;
       //数据提取
       pub_str target_pub;
-      target_pub.get_position_x= state(0);
-      target_pub.get_position_y= state(2);
-      target_pub.get_position_z= state(4);
+      // target_pub.get_position_x= state(0);
+      // target_pub.get_position_y= state(2);
+      // target_pub.get_position_z= state(4);
       target_pub.get_velocity_x= state(1);
       target_pub.get_velocity_y= state(3);
       target_pub.get_velocity_z= state(5);
       float get_yaw = state(6);
       target_pub.get_v_yaw = state(7);
       target_pub.get_r1 = state(8);
+      // 平移的开火逻辑
+      // RCLCPP_INFO(this->get_logger(),"orientation_yaw_diff:%lf",tracker_->info_yaw_diff);
+      float v = std::sqrt((target_pub.get_velocity_x)*(target_pub.get_velocity_x)+(target_pub.get_velocity_y)*(target_pub.get_velocity_y)+(target_pub.get_velocity_z)*(target_pub.get_velocity_z) );
+        if(fabsf(target_pub.get_v_yaw) < 3.0&& v > spinning_diff && (!armors_msg->armors.empty()) )
+        {
+            int target_id = 0;
+            double min_distance = 0;
+            int count_armors = 0;
+            for (const auto & armor : armors_msg->armors) {
+              // Only consider armors with the same id
+              if (armor.number == tracker_->tracked_id) {
+              // Calculate the difference between the predicted position and the current armor position
+              auto p = armor.pose.position;
+              Eigen::Vector3d position_vec(p.x, p.y, p.z);
+              double position_norm = position_vec.norm();
+              if(position_norm < min_distance){
+                  min_distance = position_norm;
+                  target_id = count_armors;
+                }
+              count_armors++;
+              }
+            }
+            auto armor_test = armors_msg -> armors[target_id];
+            auto p = armor_test.pose.position;
+            std::cout<<"i am in here ya:"<<target_id<<std::endl;
+            target_pub.get_position_x= p.x;
+            target_pub.get_position_y= p.y;
+            target_pub.get_position_z= p.z;          
+        }else{
+            target_pub.get_position_x= state(0);
+            target_pub.get_position_y= state(2);
+            target_pub.get_position_z= state(4);
+        }
+
+      armors_num = static_cast<int>(tracker_->tracked_armors_num);
+      // // 提取装甲板id
+      // const static std::map<std::string,int> id_int_map{
+      //   {"",0}, {"outpost",0},{"1",1},{"2",2},{"3",3},{"4",4},{"5",5},{"guard",6},{"base",7}
+      // };
+      // int target_id = id_int_map.at(target_msg.id);
+      
       PredictPitchXY &trajectory = PredictPitchXY::getinstance();
       trajectory.GimbalControlTransform(target_pub.get_position_x ,target_pub.get_position_y, target_pub.get_position_z,
                             target_pub.get_velocity_x, target_pub.get_velocity_y, target_pub.get_velocity_z,target_pub.get_v_yaw ,
                             target_pub.get_r1, tracker_->another_r, tracker_->dz,
-                            1,get_yaw,target_pub.aim_x,target_pub.aim_y,target_pub.aim_z,target_pub.fire
+                            armors_num,get_yaw,target_pub.aim_x,target_pub.aim_y,target_pub.aim_z,target_pub.fire,robo_yaw,v
                             );
-      std::cout<<"aim_x is"<<*(target_pub.aim_x)<<std::endl<<"aim_y is"<<*(target_pub.aim_y)<<std::endl<<"aim_z is"<<*(target_pub.aim_z)<<std::endl;
-      // float distance = std::sqrt(*(target_pub.aim_x)*(*(target_pub.aim_x)) + (*(target_pub.aim_y))*(*(target_pub.aim_y)) + (*(target_pub.aim_z))*(*(target_pub.aim_z)));
-      float distance = std::sqrt(*(target_pub.aim_x)*(*(target_pub.aim_x)) + (*(target_pub.aim_y))*(*(target_pub.aim_y)));
-      target_pub.pitch = trajectory(30.0, distance, *(target_pub.aim_z));
+      
+      
+      float distance = std::sqrt((*(target_pub.aim_x))*(*(target_pub.aim_x)) + (*(target_pub.aim_y))*(*(target_pub.aim_y)));
+      
+      target_pub.pitch = trajectory(26.0, distance, *(target_pub.aim_z)) + pitch_diff;//正常的弹道解算
+      
+      //控制pnp因距离远近 或 v_yaw 大小 带来的aim_z误差，
+      // if(distance > 3.0){
+      //   diff_control = 0.06+0.02*((distance-1.5)/1.5); //0.02*((distance-3)/3); //在3米以外，随距离增加，解算误差增大速度也加快
+      //   // diff_control = 2.5+0.4*((distance-3)/3); //0.02*((distance-3)/3); //在3米以外，随距离增加，解算误差增大速度也加快
+      //   target_pub.pitch = trajectory(29.5, distance, *(target_pub.aim_z))-diff_control;
+      // } else if (3.0 > distance && distance > 1.5){
+      //   diff_control = 0.03+0.02*((distance-1.5)/1.5) ;//0.02*((distance-1.5)/1.5);
+      //   // diff_control = 1+0.22*((distance-1.5)/1.5) ;;
+      //   target_pub.pitch = trajectory(29.5, distance, *(target_pub.aim_z))-diff_control;
+      // }else{
+	    //   diff_control =  0.02;//0.03*(distance/1.5);     
+	    //   // diff_control =  0.2;//0.03*(distance/1.5);      
+      //   target_pub.pitch = trajectory(29.5, distance, *(target_pub.aim_z))-diff_control;
+      // }
 
-      target_pub.yaw = (float)(atan2(*(target_pub.aim_y), *(target_pub.aim_x)))*57.325;//弧度转角度
-      //  + (static_yaw * (target_pub.aim_x) * 0.46);
 
+      //弧度转角度  
+      // float yaw_change = time_delay_set * 0.5;
+      // RCLCPP_INFO(this->get_logger(),"yaw_change:%f",yaw_change);
+
+      if(fabsf(target_pub.get_v_yaw)> 5.3 || (fabsf(target_pub.get_v_yaw)> 2.5 && fabsf(target_pub.get_r1-tracker_->another_r)>0.08 ) ){
+        target_pub.yaw = (float)(atan2(target_pub.get_position_y, target_pub.get_position_x))*57.2957 + yaw_diff ;
+
+      } else{
+
+      //对于较低转速的目标应当采取转到位置就击打的策略
+      target_pub.yaw = (float)(atan2(*(target_pub.aim_y), *(target_pub.aim_x)))*57.29577 + yaw_diff ; 
+      *(target_pub.fire)= robo_yaw;         
+      }
+
+    //
+    // if(armors_num == 2 && (!armors_msg->armors.empty())){
+    // target_pub.yaw = (float)(atan2(*(target_pub.aim_y), *(target_pub.aim_x)))*57.29577 + yaw_diff ; 
+    // *(target_pub.fire)= robo_yaw;    
+    // }
+
+    //保护目标角度 在 -180 到 +180 区间
+      if(target_pub.yaw > 180){
+            target_pub.yaw -=360;
+      }else if (target_pub.yaw < -180.0)  {
+            target_pub.yaw +=360;
+      }
+
+    //计算相对于当前位置，自身在yaw上要转动的角度
+      float mv_yaw =target_pub.yaw - robo_yaw*57.2957;
+      if(mv_yaw > 180){
+        mv_yaw -= 360;
+      } else if (mv_yaw < -180.0){
+        mv_yaw += 360;
+      }
+        // RCLCPP_INFO(this->get_logger(),"mv_yaw:%f",mv_yaw);
+      //根据移动角度判断是否开火，以及检测所发位置是否正常
+      if(fabsf(mv_yaw)>5){
+        RCLCPP_WARN(this->get_logger(),"this is a peculiar mv_yaw:%f",mv_yaw);
+        *(target_pub.fire) = 10;
+      } else if(fabsf(mv_yaw)> 20){
+        target_pub.yaw = last_pre_yaw;
+      }
+      //由于目前建系未考虑自身和目标体积 在距离过近时 会导致旋转角度过大的情况出现，避免此类情况出现
+      if(distance < 0.4)
+      {
+        std::cout<<"enemy lost "<<std::endl;
+        tracker_->tracker_state = Tracker::LOST;
+      }
+
+      last_pre_yaw = target_pub.yaw;
       target_msg.pre_pitch = target_pub.pitch;
       target_msg.pre_yaw = target_pub.yaw;
       target_msg.aim_x = *(target_pub.aim_x);
       target_msg.aim_y = *(target_pub.aim_y);
       target_msg.aim_z = *(target_pub.aim_z);
       target_msg.fire = *(target_pub.fire);
+      // test_msg 用于查看你想监控的数据
+      test_msg.data = *(target_pub.fire);
     }
   }
 
   last_time_ = time;
-                                         
+  test_pub_->publish(test_msg);                                     
   target_pub_->publish(target_msg);
 
   publishMarkers(target_msg);
@@ -361,11 +502,11 @@ void ArmorTrackerNode::publishMarkers(const auto_aim_interfaces::msg::Target & t
       marker_array.markers.emplace_back(armor_marker_);
     }
   } else {
-    position_marker_.action = visualization_msgs::msg::Marker::DELETE;
-    linear_v_marker_.action = visualization_msgs::msg::Marker::DELETE;
-    angular_v_marker_.action = visualization_msgs::msg::Marker::DELETE;
+    position_marker_.action = visualization_msgs::msg::Marker::DELETEALL;
+    linear_v_marker_.action = visualization_msgs::msg::Marker::DELETEALL;
+    angular_v_marker_.action = visualization_msgs::msg::Marker::DELETEALL;
 
-    armor_marker_.action = visualization_msgs::msg::Marker::DELETE;
+    armor_marker_.action = visualization_msgs::msg::Marker::DELETEALL;
     marker_array.markers.emplace_back(armor_marker_);
   }
 

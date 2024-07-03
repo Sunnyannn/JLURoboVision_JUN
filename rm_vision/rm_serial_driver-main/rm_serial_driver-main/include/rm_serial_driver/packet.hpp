@@ -19,9 +19,7 @@ struct ReceivePacket
   float roll;
   float pitch;
   float yaw;
-  float aim_x;
-  float aim_y;
-  float aim_z;
+  int8_t sentry_decision;
   uint16_t checksum = 0;                                   
 } __attribute__((packed));
 
@@ -30,12 +28,14 @@ struct SendPacket
 {
   uint8_t header = 0xA5;
   int8_t tracking;
-  int8_t fire;
+  // int8_t fire;
   uint8_t id : 3;          // 0-outpost 6-guard 7-base
   uint8_t armors_num : 3;  // 2-balance 3-outpost 4-normal
   uint8_t reserved : 2;
   float yaw;
   float pitch;
+  float fire;
+  float v_yaw;
   uint16_t checksum = 0;
 } __attribute__((packed));
 

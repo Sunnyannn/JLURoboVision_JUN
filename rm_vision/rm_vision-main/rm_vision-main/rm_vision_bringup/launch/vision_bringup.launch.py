@@ -39,7 +39,8 @@ def generate_launch_description():
             ],
             output='both',
             emulate_tty=True,
-            ros_arguments=['--ros-args', '--log-level',
+            ros_arguments=['--ros-args', 
+                           '--log-level',
                            'armor_detector:='+launch_params['detector_log_level']],
             on_exit=Shutdown(),
         )
@@ -63,7 +64,8 @@ def generate_launch_description():
         emulate_tty=True,
         parameters=[node_params],
         on_exit=Shutdown(),
-        ros_arguments=['--ros-args', '--log-level',
+        ros_arguments=['--ros-args', 
+                       '--log-level',
                        'serial_driver:='+launch_params['serial_log_level']],
     )
 
@@ -77,9 +79,16 @@ def generate_launch_description():
         actions=[tracker_node],
     )
 
+    my_tf_1 = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        output="screen",
+        arguments=["0","0","0","0","0","0","odom","base_link"]
+    )
     return LaunchDescription([
         robot_state_publisher,
         cam_detector,
         delay_serial_node,
         delay_tracker_node,
+        # my_tf_1,
     ])

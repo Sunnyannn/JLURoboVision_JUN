@@ -93,9 +93,13 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions & options)
 
 void ArmorDetectorNode::imageCallback(const sensor_msgs::msg::Image::ConstSharedPtr img_msg)
 {
+  
   auto armors = detectArmors(img_msg);
-
-  if (pnp_solver_ != nullptr) {
+      // std::cout<<"_size:"<<armors.size()<<std::endl;
+  if(armors.empty()){
+      RCLCPP_INFO(this->get_logger(), "no armors!");
+ }
+  if (pnp_solver_ != nullptr ) {
     armors_msg_.header = armor_marker_.header = text_marker_.header = img_msg->header;
     armors_msg_.armors.clear();
     marker_array_.markers.clear();
@@ -232,6 +236,7 @@ std::vector<Armor> ArmorDetectorNode::detectArmors(
     armors_data_pub_->publish(detector_->debug_armors);
 
     if (!armors.empty()) {
+      // std::cout<<"armor_size:"<<armors.size()<<std::endl;
       auto all_num_img = detector_->getAllNumbersImage();
       number_img_pub_.publish(
         *cv_bridge::CvImage(img_msg->header, "mono8", all_num_img).toImageMsg());
