@@ -241,9 +241,36 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
       }),
     armors_msg->armors.end()); 
   }
-    // for (const auto & armor : armors_msg->armors) {
-    //   std::cout<<"tracke: "<<armor.number<<std::endl;
-    // }
+  
+  //  for (const auto & armor : armors_msg->armors){
+  //     std::cout<<"armor.number--"<<armor.number<<std::endl;
+  //   } 
+
+//Filter low level armor
+  const static std::map<std::string, int> priority_map{
+    {"",4}, {"outpost", 3},{"1", 2},{"2", 3},{"3", 2},{"4", 2},{"5", 2},{"guard", 2},{"base", 2}
+  };
+  
+  if(tracker_->tracker_state == Tracker::LOST){
+    highest_level = 3;
+  }
+  //检查装甲板优先级是否改变
+  for (const auto & armor : armors_msg->armors){
+    if(priority_map.at(armor.number) < highest_level){
+      highest_level = priority_map.at(armor.number);
+    } 
+  }
+  //抹去低优先级的装甲板
+   armors_msg->armors.erase(
+    std::remove_if(
+      armors_msg->armors.begin(), armors_msg->armors.end(),
+      [this](const auto_aim_interfaces::msg::Armor & armor) {
+        return priority_map.at(armor.number) > highest_level ;
+      }),
+    armors_msg->armors.end()); 
+  // for (const auto & armor : armors_msg->armors){
+  //     std::cout<<"armor.number--2"<<armor.number<<std::endl;
+  //   } 
 
   // Init message
   auto_aim_interfaces::msg::TrackerInfo info_msg;
@@ -253,9 +280,10 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
   target_msg.header.frame_id = target_frame_;
 
   // Update tracker
-  if (tracker_->tracker_state == Tracker::LOST) {
+  if (tracker_->tracker_state == Tracker::LOST || priority_level != highest_level) {
     tracker_->init(armors_msg);
     target_msg.tracking = false;
+    priority_level = highest_level;
   } else {
     dt_ = (time - last_time_).seconds();
     tracker_->lost_thres = static_cast<int>(lost_time_thres_ / dt_);
@@ -353,18 +381,29 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
       
       float distance = std::sqrt((*(target_pub.aim_x))*(*(target_pub.aim_x)) + (*(target_pub.aim_y))*(*(target_pub.aim_y)));
       
-      target_pub.pitch = trajectory(26.0, distance, *(target_pub.aim_z)) + pitch_diff;//正常的弹道解算
+      target_pub.pitch = trajectory(27.0, distance, *(target_pub.aim_z)) + pitch_diff;//正常的弹道解算
+        // RCLCPP_INFO(this->get_logger(),"yaw_change");
       
-      //控制pnp因距离远近 或 v_yaw 大小 带来的aim_z误差，
-      // if(distance > 3.0){
-      //   diff_control = 0.06+0.02*((distance-1.5)/1.5); //0.02*((distance-3)/3); //在3米以外，随距离增加，解算误差增大速度也加快
-      //   // diff_control = 2.5+0.4*((distance-3)/3); //0.02*((distance-3)/3); //在3米以外，随距离增加，解算误差增大速度也加快
-      //   target_pub.pitch = trajectory(29.5, distance, *(target_pub.aim_z))-diff_control;
-      // } else if (3.0 > distance && distance > 1.5){
-      //   diff_control = 0.03+0.02*((distance-1.5)/1.5) ;//0.02*((distance-1.5)/1.5);
-      //   // diff_control = 1+0.22*((distance-1.5)/1.5) ;;
-      //   target_pub.pitch = trajectory(29.5, distance, *(target_pub.aim_z))-diff_control;
-      // }else{
+      // //控制pnp因距离远近 或 v_yaw 大小 带来的aim_z误差，
+      // if(distance > 3.0 && distance < 5.8){
+      //   // diff_control = 0.01+0.02*((distance-3)/3); //0.02*((distance-3)/3); //在3米以外，随距离增加，解算误差增大速度也加快
+      //   diff_control = 0.3 + 0.4*((distance-3)/2.8); //0.02*((distance-3)/3); //在3米以外，随距离增加，解算误差增大速度也加快
+      //   if(fabsf(target_pub.get_v_yaw) > 4){
+      //   RCLCPP_INFO(this->get_logger(),"yaw_change");
+
+      //   diff_control = 0.6 + 0.4*((distance-3)/2.8); //0.02*((distance-3)/3); //在3米以外，随距离增加，解算误差增大速度也加快
+      //   }
+      //   target_pub.pitch = trajectory(27.0, distance, *(target_pub.aim_z))-diff_control;
+      // } else if (distance > 5.8 ){
+      //   // diff_control = 0.06+0.06*((distance-6)/0.5) ;//0.02*((distance-1.5)/1.5);//距离
+      //   diff_control = 0.7 +0.2*((distance-5.8)/0.5);//角度
+      //   // RCLCPP_INFO(this->get_logger(),"yaw_change");
+      //   if(fabsf(target_pub.get_v_yaw) > 4){
+      //   diff_control = 1.1 +0.2*((distance-5.8)/0.5);//角度
+      //   }
+      //   target_pub.pitch = trajectory(27.0, distance, *(target_pub.aim_z)) - diff_control;
+      // }
+      // else{
 	    //   diff_control =  0.02;//0.03*(distance/1.5);     
 	    //   // diff_control =  0.2;//0.03*(distance/1.5);      
       //   target_pub.pitch = trajectory(29.5, distance, *(target_pub.aim_z))-diff_control;
@@ -375,14 +414,16 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
       // float yaw_change = time_delay_set * 0.5;
       // RCLCPP_INFO(this->get_logger(),"yaw_change:%f",yaw_change);
 
-      if(fabsf(target_pub.get_v_yaw)> 5.3 || (fabsf(target_pub.get_v_yaw)> 2.5 && fabsf(target_pub.get_r1-tracker_->another_r)>0.08 ) ){
+      if(fabsf(target_pub.get_v_yaw)> 5.3 || (distance > 4.2 && fabsf(target_pub.get_v_yaw)> 2.5) ){
         target_pub.yaw = (float)(atan2(target_pub.get_position_y, target_pub.get_position_x))*57.2957 + yaw_diff ;
 
       } else{
 
       //对于较低转速的目标应当采取转到位置就击打的策略
       target_pub.yaw = (float)(atan2(*(target_pub.aim_y), *(target_pub.aim_x)))*57.29577 + yaw_diff ; 
-      *(target_pub.fire)= robo_yaw;         
+      if(fabsf(*target_pub.fire - robo_yaw) < 0.7){
+        *(target_pub.fire)= robo_yaw;         
+      }
       }
 
     //

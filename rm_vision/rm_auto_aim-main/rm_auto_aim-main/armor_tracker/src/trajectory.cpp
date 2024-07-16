@@ -142,10 +142,18 @@ double PredictPitchXY::dropshotRK45()
 
 
 void PredictPitchXY::zero_cross_detector(float& yaw_diff){
-  if (yaw_diff > 5.7){
+  if(yaw_diff > 5.7){
     yaw_diff = 2*pi - yaw_diff;
   }
-  
+}      
+
+void PredictPitchXY::limit_yaw_range(float& pre_yaw){
+  if(pre_yaw > pi){
+        pre_yaw -=2 *pi;
+      }
+    if(pre_yaw < -pi){
+        pre_yaw +=2 *pi;
+      }
 }
 
 //一些参数
@@ -159,10 +167,10 @@ void PredictPitchXY::GimbalControlTransform(float xw, float yw, float zw, float 
   float static_z = 0.00;
   // 线性预测
   float algorithm_time = 25; //可以通过latency查看
-  float respond_time = 50;   //可以通过打小陀螺测试得到
+  float respond_time = 60;   //可以通过打小陀螺测试得到
   if(fabsf(v_yaw) > 5){
       //对于高速旋转的目标，采取秒准中心的策略，respond_time 理应更少
-      respond_time = 20;
+      respond_time = 27;
   }
   // std::cout<<"respond_time:"<<respond_time<<std::endl;
   float bias_time = algorithm_time + respond_time;  // bias_time 作为1、上位机 图像传输、算法解算；2、通信 传输耗时；3、下位机 拨弹响应、子弹加速 的趋于固定的时间损耗
@@ -213,14 +221,16 @@ void PredictPitchXY::GimbalControlTransform(float xw, float yw, float zw, float 
       tar_position[i].y = yw - r * sin(tmp_yaw);
       tar_position[i].z = zw;
       tar_position[i].yaw = tar_yaw + i * 2 *pi / 2.0f;
-      if(tar_position[i].yaw > pi){
-        tar_position[i].yaw -=2 *pi;
-      }
+      // if(tar_position[i].yaw > pi){
+      //   tar_position[i].yaw -=2 *pi;
+      // }
+      limit_yaw_range(tar_position[i].yaw);
       float pre_tmp_yaw = tmp_yaw + v_yaw * timeDelay;
       pre_aim[i].x =xw + vxw * timeDelay  - r * cos(pre_tmp_yaw);
       pre_aim[i].y =yw + vyw * timeDelay  - r * sin(pre_tmp_yaw);
       pre_aim[i].z =tar_position[i].z + vzw * timeDelay;
       pre_aim[i].yaw = tar_position[i].yaw + v_yaw * timeDelay;
+      limit_yaw_range(pre_aim[i].yaw);
     }
     yaw_diff_min = fabsf(robo_yaw - pre_aim[0].yaw);
     zero_cross_detector(yaw_diff_min);
@@ -238,19 +248,21 @@ void PredictPitchXY::GimbalControlTransform(float xw, float yw, float zw, float 
       for (i = 0; i < 3; i++)
     {
       float tmp_yaw = tar_yaw + i *2* pi/3.0f;    
-      float r = r1;
+      float r = 0.26;
       tar_position[i].x = xw - r * cos(tmp_yaw);
       tar_position[i].y = yw - r * sin(tmp_yaw);
       tar_position[i].z = zw;
       tar_position[i].yaw = tar_yaw + i * 2 *pi / 3.0f;
-      if(tar_position[i].yaw > pi){
-        tar_position[i].yaw -=2 *pi;
-      }
+      // if(tar_position[i].yaw > pi){
+      //   tar_position[i].yaw -=2 *pi;
+      // }
+      limit_yaw_range(tar_position[i].yaw);
       float pre_tmp_yaw = tmp_yaw + v_yaw * timeDelay;
       pre_aim[i].x =xw + vxw * timeDelay  - r * cos(pre_tmp_yaw);
       pre_aim[i].y =yw + vyw * timeDelay  - r * sin(pre_tmp_yaw);
       pre_aim[i].z =tar_position[i].z + vzw * timeDelay;
       pre_aim[i].yaw = tar_position[i].yaw + v_yaw * timeDelay;
+      limit_yaw_range(pre_aim[i].yaw);
     }
     //计算枪管到目标装甲板yaw最小的那个装甲板
     yaw_diff_min = fabsf(robo_yaw - pre_aim[0].yaw);
@@ -277,15 +289,16 @@ void PredictPitchXY::GimbalControlTransform(float xw, float yw, float zw, float 
       tar_position[i].y = yw - r * sin(tmp_yaw);
       tar_position[i].z = use_1 ? zw : dz + zw;
       tar_position[i].yaw = tar_yaw + i * pi / 2.0f;
-      if(tar_position[i].yaw > pi){
-        tar_position[i].yaw -=2 *pi;
-      }
-
+      // if(tar_position[i].yaw > pi){
+      //   tar_position[i].yaw -=2 *pi;
+      // }
+      limit_yaw_range(tar_position[i].yaw);
       float pre_tmp_yaw = tmp_yaw + v_yaw * timeDelay;
       pre_aim[i].x =xw + vxw * timeDelay  - r * cos(pre_tmp_yaw);
       pre_aim[i].y =yw + vyw * timeDelay  - r * sin(pre_tmp_yaw);
       pre_aim[i].z =tar_position[i].z + vzw * timeDelay;
       pre_aim[i].yaw = tar_position[i].yaw + v_yaw * timeDelay;
+      limit_yaw_range(pre_aim[i].yaw);
       use_1 = !use_1;
     }
 
@@ -350,11 +363,11 @@ void PredictPitchXY::GimbalControlTransform(float xw, float yw, float zw, float 
     {
       // *fire = 10; 
       *fire = pre_aim[idx].yaw; //把预测的目标装甲板相对于 odom坐标系的朝向角 发给下位机用于火控判断
-      std::cout<<"it the armor --"<< idx<<std::endl;
-      std::cout<<"it the armor2 --"<< pre_aim[0].yaw<<std::endl;
-      std::cout<<"it the armor3 --"<< pre_aim[1].yaw<<std::endl;
+      // std::cout<<"it the armor --"<< idx<<std::endl;
+      // std::cout<<"it the armor2 --"<< pre_aim[0].yaw<<std::endl;
+      // std::cout<<"it the armor3 --"<< pre_aim[1].yaw<<std::endl;
     }
-    if(yaw_diff_min < 0.15 && fabsf(v_yaw) > 1.8){
+    if(yaw_diff_min < 0.06 && fabsf(v_yaw) > 1.8){
    //把预测的目标装甲板相对于 odom坐标系的朝向角 发给下位机用于火控判断
         count++;
       if(count > 10000){

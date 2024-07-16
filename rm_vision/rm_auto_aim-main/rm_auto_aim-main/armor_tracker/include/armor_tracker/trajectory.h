@@ -120,6 +120,8 @@ public:
                                 float r1,float r2,float dz,int armors_num,float yaw, float *aim_x, 
                                 float *aim_y, float *aim_z ,float *fire,float robo_yaw,float v);
 
-    void zero_cross_detector(float& yaw_diff);               
+    void zero_cross_detector(float& yaw_diff);      
+    void limit_yaw_range(float& pre_yaw);               
+
 };
 #endif

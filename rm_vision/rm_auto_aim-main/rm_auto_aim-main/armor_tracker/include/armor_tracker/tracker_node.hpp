@@ -66,14 +66,15 @@ private:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_tracker_srv_;
 
   ///////
+  int highest_level = 3;
+  int priority_level = 0;
   int   sentry_decision = 0;//用于判断哨兵击打策略
   int   armors_num = 4;   //用于击打目标建模
   float robo_yaw=0;   //储存下位机回传的当前yaw值
   float diff_control; // 控制因为距离带来的pnp垂直误差
   float yaw_control = 0; //用于人工控制yaw
   float spinning_diff = 0.0; //用于判断敌方是否为小陀螺，更改开火逻辑
-  
-
+ 
   // Subscriber with tf2 message_filter
   std::string target_frame_;
   std::shared_ptr<tf2_ros::Buffer> tf2_buffer_;

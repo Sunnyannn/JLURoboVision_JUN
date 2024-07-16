@@ -32,6 +32,8 @@ public:
     double max_ratio;
     // vertical angle
     double max_angle;
+    // area condition
+    double min_fill_ratio;
   };
 
   struct ArmorParams
