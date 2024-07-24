@@ -6,7 +6,7 @@ namespace rm_auto_aim
 {
 ExtendedKalmanFilter::ExtendedKalmanFilter(
   const VecVecFunc & f, const VecVecFunc & h, const VecMatFunc & j_f, const VecMatFunc & j_h,
-  const VoidMatFunc & u_q, const VecMatFunc & u_r, const Eigen::MatrixXd & P0)
+  const VecMatFunc & u_q, const VecMatFunc & u_r, const Eigen::MatrixXd & P0)
 : f(f),
   h(h),
   jacobian_f(j_f),
