@@ -86,13 +86,21 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
     // clang-format on
     return h;
   };
-  // update_Q - process noise covariance matrix
-  s2qxyz_ = declare_parameter("ekf.sigma2_q_xyz", 20.0);
-  s2qyaw_ = declare_parameter("ekf.sigma2_q_yaw", 100.0);
-  s2qr_ = declare_parameter("ekf.sigma2_q_r", 800.0);
-  auto u_q = [this]() {
+ // update_Q - process noise covariance matrix
+  s2qxyz_max_ = declare_parameter("ekf.sigma2_q_xyz_max", 0.1);
+  s2qxyz_min_ = declare_parameter("ekf.sigma2_q_xyz_min", 0.05);
+  s2qyaw_max_ = declare_parameter("ekf.sigma2_q_yaw_max", 10.0);
+  s2qyaw_min_ = declare_parameter("ekf.sigma2_q_yaw_min", 5.0);
+  s2qr_ = declare_parameter("ekf.sigma2_q_r", 80.0);
+  auto u_q = [this](const Eigen::VectorXd & x_p) {
+    double vx = x_p(1), vy = x_p(3), v_yaw = x_p(7);
+    double dx = pow(pow(vx, 2) + pow(vy, 2), 0.5);
+    double dy = abs(v_yaw);
     Eigen::MatrixXd q(9, 9);
-    double t = dt_, x = s2qxyz_, y = s2qyaw_, r = s2qr_;
+    double x, y;
+    x = exp(-dy) * (s2qxyz_max_ - s2qxyz_min_) + s2qxyz_min_;
+    y = exp(-dx) * (s2qyaw_max_ - s2qyaw_min_) + s2qyaw_min_;
+    double t = dt_, r = s2qr_;
     double q_x_x = pow(t, 4) / 4 * x, q_x_vx = pow(t, 3) / 2 * x, q_vx_vx = pow(t, 2) * x;
     double q_y_y = pow(t, 4) / 4 * y, q_y_vy = pow(t, 3) / 2 * x, q_vy_vy = pow(t, 2) * y;
     double q_r = pow(t, 4) / 4 * r;
@@ -460,7 +468,7 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
         std::cout<<"enemy lost "<<std::endl;
         tracker_->tracker_state = Tracker::LOST;
       }
-
+      
       last_pre_yaw = target_pub.yaw;
       target_msg.pre_pitch = target_pub.pitch;
       target_msg.pre_yaw = target_pub.yaw;

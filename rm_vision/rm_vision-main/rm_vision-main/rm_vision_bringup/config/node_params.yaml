@@ -22,6 +22,7 @@
     binary_thres: 80
 
     light.min_ratio: 0.1
+    light.min_fill_ratio: 0.6
     armor.min_light_ratio: 0.8
 
     classifier_threshold: 0.8
@@ -33,12 +34,14 @@
     max_armor_distance: 10.0
 
     ekf:
-      sigma2_q_xyz: 0.05
-      sigma2_q_yaw: 10.0
-      sigma2_q_r: 100.0
+      sigma2_q_xyz_max: 3.0
+      sigma2_q_xyz_min: 1.0
+      sigma2_q_yaw_max: 6.0
+      sigma2_q_yaw_min: 3.0
+      sigma2_q_r: 40.0
 
-      r_xyz_factor: 5e-5
-      r_yaw: 6e-3
+      r_xyz_factor: 6e-4
+      r_yaw: 8e-3
 
     tracker:
       max_match_distance: 0.5
