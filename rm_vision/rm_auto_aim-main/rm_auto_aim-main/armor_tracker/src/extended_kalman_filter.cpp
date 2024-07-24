@@ -25,7 +25,7 @@ void ExtendedKalmanFilter::setState(const Eigen::VectorXd & x0) { x_post = x0; }
 
 Eigen::MatrixXd ExtendedKalmanFilter::predict()
 {
-  F = jacobian_f(x_post), Q = update_Q();
+  F = jacobian_f(x_post), Q = update_Q(x_post);
 
   x_pri = f(x_post);
   P_pri = F * P_post * F.transpose() + Q;

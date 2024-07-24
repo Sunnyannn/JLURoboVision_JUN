@@ -16,11 +16,11 @@ public:
 
   using VecVecFunc = std::function<Eigen::VectorXd(const Eigen::VectorXd &)>;
   using VecMatFunc = std::function<Eigen::MatrixXd(const Eigen::VectorXd &)>;
-  using VoidMatFunc = std::function<Eigen::MatrixXd()>;
+  using VoidMatFunc = std::function<Eigen::MatrixXd(const Eigen::VectorXd &)>;
 
   explicit ExtendedKalmanFilter(
     const VecVecFunc & f, const VecVecFunc & h, const VecMatFunc & j_f, const VecMatFunc & j_h,
-    const VoidMatFunc & u_q, const VecMatFunc & u_r, const Eigen::MatrixXd & P0);
+    const VecMatFunc & u_q, const VecMatFunc & u_r, const Eigen::MatrixXd & P0);
 
   // Set the initial state
   void setState(const Eigen::VectorXd & x0);
