@@ -3,6 +3,8 @@
 
 #include "armor_tracker/trajectory.h"
 
+#include <angles/angles.h>
+
 // STD
 #include <memory>
 #include <vector>
@@ -20,14 +22,16 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
   sentry_decision_sub_ = this->create_subscription<std_msgs::msg::Int8>(
     "/sentry_decision", 10,std::bind(&ArmorTrackerNode::sentryCallback,this,std::placeholders::_1));
 
-  // RCLCPP_INFO(this->get_logger(), "Getting Robo_yaw ");
+  
   // Maximum allowable armor distance in the XOY plane
   max_armor_distance_ = this->declare_parameter("max_armor_distance", 10.0);
 
   // Tracker
-  spinning_diff = this->declare_parameter("tracker.spinning_diff",0.2);
-  pitch_diff = this->declare_parameter("tracker.pitch_diff",0.0);
-  yaw_diff = this->declare_parameter("tracker.yaw_diff",0.0);
+  respond_time = this->declare_parameter("tracker.respond_time", 40);
+  v_judge = this->declare_parameter("tracker.v_judge", 0.2);
+  v_yaw_judge = this->declare_parameter("tracker.v_yaw_judge", 3.0);
+  pitch_diff = this->declare_parameter("tracker.pitch_diff", 0.0);
+  yaw_diff = this->declare_parameter("tracker.yaw_diff", 0.0);
   double max_match_distance = this->declare_parameter("tracker.max_match_distance", 0.15);
   double max_match_yaw_diff = this->declare_parameter("tracker.max_match_yaw_diff", 1.0);
   tracker_ = std::make_unique<Tracker>(max_match_distance, max_match_yaw_diff);
@@ -98,8 +102,18 @@ ArmorTrackerNode::ArmorTrackerNode(const rclcpp::NodeOptions & options)
     double dy = abs(v_yaw);
     Eigen::MatrixXd q(9, 9);
     double x, y;
-    x = exp(-dy) * (s2qxyz_max_ - s2qxyz_min_) + s2qxyz_min_;
-    y = exp(-dx) * (s2qyaw_max_ - s2qyaw_min_) + s2qyaw_min_;
+    // 他原来的公式如下，原则看起来是低速高噪，高速低噪，我觉得似乎不是很符合逻辑，应该反过来
+    // x = exp(-dy) * (s2qxyz_max_ - s2qxyz_min_) + s2qxyz_min_;
+    // y = exp(-dx) * (s2qyaw_max_ - s2qyaw_min_) + s2qyaw_min_;
+    //低速低噪版 从逻辑和实测效果上我觉得低速低噪是对的，但是这个目前不够好，需要确保max和min成2倍或更小倍数的关系，懒得改了，后续直接更新成加速度模型吧
+    x = -exp(-dy) * (s2qxyz_max_ - s2qxyz_min_) + s2qxyz_max_;
+    y = -exp(-dx) * (s2qyaw_max_ - s2qyaw_min_) + s2qyaw_max_;
+
+    // 一个可爱的双曲线公式,由GPT赞助支持，不一定用
+    //Smoothly adjust noise levels using tanh function
+    // x = (std::tanh(dx) / std::tanh(1)) * (s2qxyz_max_ - s2qxyz_min_) + s2qxyz_min_;
+    // y = (std::tanh(dy) / std::tanh(1)) * (s2qyaw_max_ - s2qyaw_min_) + s2qyaw_min_;
+    
     double t = dt_, r = s2qr_;
     double q_x_x = pow(t, 4) / 4 * x, q_x_vx = pow(t, 3) / 2 * x, q_vx_vx = pow(t, 2) * x;
     double q_y_y = pow(t, 4) / 4 * y, q_y_vy = pow(t, 3) / 2 * x, q_vy_vy = pow(t, 2) * y;
@@ -239,7 +253,7 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
                  max_armor_distance_;
       }),
     armors_msg->armors.end());
-  // Filter sentry armors depend on actual situation 
+  // Filter sentry armors depending on actual situation 
   if( sentry_decision == 0){
      armors_msg->armors.erase(
     std::remove_if(
@@ -254,7 +268,7 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
   //     std::cout<<"armor.number--"<<armor.number<<std::endl;
   //   } 
 
-//Filter low level armor
+//Filter low level armors
   const static std::map<std::string, int> priority_map{
     {"",4}, {"outpost", 3},{"1", 2},{"2", 3},{"3", 2},{"4", 2},{"5", 2},{"guard", 2},{"base", 2}
   };
@@ -276,9 +290,7 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
         return priority_map.at(armor.number) > highest_level ;
       }),
     armors_msg->armors.end()); 
-  // for (const auto & armor : armors_msg->armors){
-  //     std::cout<<"armor.number--2"<<armor.number<<std::endl;
-  //   } 
+
 
   // Init message
   auto_aim_interfaces::msg::TrackerInfo info_msg;
@@ -340,8 +352,8 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
       target_pub.get_r1 = state(8);
       // 平移的开火逻辑
       // RCLCPP_INFO(this->get_logger(),"orientation_yaw_diff:%lf",tracker_->info_yaw_diff);
-      float v = std::sqrt((target_pub.get_velocity_x)*(target_pub.get_velocity_x)+(target_pub.get_velocity_y)*(target_pub.get_velocity_y)+(target_pub.get_velocity_z)*(target_pub.get_velocity_z) );
-        if(fabsf(target_pub.get_v_yaw) < 3.0&& v > spinning_diff && (!armors_msg->armors.empty()) )
+      float v = std::sqrt((target_pub.get_velocity_x)*(target_pub.get_velocity_x)+(target_pub.get_velocity_y)*(target_pub.get_velocity_y));
+        if(fabsf(target_pub.get_v_yaw) < v_yaw_judge && v > v_judge && (!armors_msg->armors.empty()) )
         {
             int target_id = 0;
             double min_distance = 0;
@@ -383,7 +395,7 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
       trajectory.GimbalControlTransform(target_pub.get_position_x ,target_pub.get_position_y, target_pub.get_position_z,
                             target_pub.get_velocity_x, target_pub.get_velocity_y, target_pub.get_velocity_z,target_pub.get_v_yaw ,
                             target_pub.get_r1, tracker_->another_r, tracker_->dz,
-                            armors_num,get_yaw,target_pub.aim_x,target_pub.aim_y,target_pub.aim_z,target_pub.fire,robo_yaw,v
+                            armors_num,get_yaw,target_pub.aim_x,target_pub.aim_y,target_pub.aim_z,target_pub.fire,robo_yaw, respond_time,v,v_judge,v_yaw_judge
                             );
       
       
@@ -391,32 +403,6 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
       
       target_pub.pitch = trajectory(27.0, distance, *(target_pub.aim_z)) + pitch_diff;//正常的弹道解算
         // RCLCPP_INFO(this->get_logger(),"yaw_change");
-      
-      // //控制pnp因距离远近 或 v_yaw 大小 带来的aim_z误差，
-      // if(distance > 3.0 && distance < 5.8){
-      //   // diff_control = 0.01+0.02*((distance-3)/3); //0.02*((distance-3)/3); //在3米以外，随距离增加，解算误差增大速度也加快
-      //   diff_control = 0.3 + 0.4*((distance-3)/2.8); //0.02*((distance-3)/3); //在3米以外，随距离增加，解算误差增大速度也加快
-      //   if(fabsf(target_pub.get_v_yaw) > 4){
-      //   RCLCPP_INFO(this->get_logger(),"yaw_change");
-
-      //   diff_control = 0.6 + 0.4*((distance-3)/2.8); //0.02*((distance-3)/3); //在3米以外，随距离增加，解算误差增大速度也加快
-      //   }
-      //   target_pub.pitch = trajectory(27.0, distance, *(target_pub.aim_z))-diff_control;
-      // } else if (distance > 5.8 ){
-      //   // diff_control = 0.06+0.06*((distance-6)/0.5) ;//0.02*((distance-1.5)/1.5);//距离
-      //   diff_control = 0.7 +0.2*((distance-5.8)/0.5);//角度
-      //   // RCLCPP_INFO(this->get_logger(),"yaw_change");
-      //   if(fabsf(target_pub.get_v_yaw) > 4){
-      //   diff_control = 1.1 +0.2*((distance-5.8)/0.5);//角度
-      //   }
-      //   target_pub.pitch = trajectory(27.0, distance, *(target_pub.aim_z)) - diff_control;
-      // }
-      // else{
-	    //   diff_control =  0.02;//0.03*(distance/1.5);     
-	    //   // diff_control =  0.2;//0.03*(distance/1.5);      
-      //   target_pub.pitch = trajectory(29.5, distance, *(target_pub.aim_z))-diff_control;
-      // }
-
 
       //弧度转角度  
       // float yaw_change = time_delay_set * 0.5;
@@ -429,31 +415,20 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
 
       //对于较低转速的目标应当采取转到位置就击打的策略
       target_pub.yaw = (float)(atan2(*(target_pub.aim_y), *(target_pub.aim_x)))*57.29577 + yaw_diff ; 
-      if(fabsf(*target_pub.fire - robo_yaw) < 0.7){
+      fire_judge = angles::shortest_angular_distance(*(target_pub.fire), robo_yaw);
+        //也需要限制一定的开火朝向角用以确保命中
+      if(fabsf(fire_judge) < 0.5){
         *(target_pub.fire)= robo_yaw;         
       }
       }
 
-    //
-    // if(armors_num == 2 && (!armors_msg->armors.empty())){
-    // target_pub.yaw = (float)(atan2(*(target_pub.aim_y), *(target_pub.aim_x)))*57.29577 + yaw_diff ; 
-    // *(target_pub.fire)= robo_yaw;    
-    // }
 
     //保护目标角度 在 -180 到 +180 区间
-      if(target_pub.yaw > 180){
-            target_pub.yaw -=360;
-      }else if (target_pub.yaw < -180.0)  {
-            target_pub.yaw +=360;
-      }
+     limit_yaw_range_360(target_pub.yaw);
 
     //计算相对于当前位置，自身在yaw上要转动的角度
       float mv_yaw =target_pub.yaw - robo_yaw*57.2957;
-      if(mv_yaw > 180){
-        mv_yaw -= 360;
-      } else if (mv_yaw < -180.0){
-        mv_yaw += 360;
-      }
+      limit_yaw_range_360(mv_yaw);
         // RCLCPP_INFO(this->get_logger(),"mv_yaw:%f",mv_yaw);
       //根据移动角度判断是否开火，以及检测所发位置是否正常
       if(fabsf(mv_yaw)>5){
@@ -487,6 +462,16 @@ void ArmorTrackerNode::armorsCallback(const auto_aim_interfaces::msg::Armors::Sh
 
   publishMarkers(target_msg);
 }
+
+void limit_yaw_range_360(float& pre_yaw){
+    if(pre_yaw > 180){
+        pre_yaw -= 2 * 180;
+      }
+    if(pre_yaw < -180){
+        pre_yaw += 2 * 180;
+      }
+}
+
 
 void ArmorTrackerNode::publishMarkers(const auto_aim_interfaces::msg::Target & target_msg)
 {

@@ -192,7 +192,7 @@ void Tracker::handleArmorJump(const Armor & current_armor)
   updateArmorsNum(current_armor);
   // Only 4 armors has 2 radius and height
   if (tracked_armors_num == ArmorsNum::NORMAL_4) {
-    std::cout<<"dz:"<<current_armor.pose.position.z<<std::endl;
+    // std::cout<<"dz:"<<current_armor.pose.position.z<<std::endl;
     dz = target_state(4) - current_armor.pose.position.z;
     target_state(4) = current_armor.pose.position.z;
     std::swap(target_state(8), another_r);
@@ -243,4 +243,11 @@ Eigen::Vector3d Tracker::getArmorPositionFromState(const Eigen::VectorXd & x)
   return Eigen::Vector3d(xa, ya, za);
 }
 
+{
+  xa - ya
+  
+}
+
 }  // namespace rm_auto_aim
+
+

@@ -45,6 +45,8 @@ private:
 
   void publishMarkers(const auto_aim_interfaces::msg::Target & target_msg);
 
+  void limit_yaw_range_360(float& pre_yaw); 
+
   // Maximum allowable armor distance in the XOY plane
   double max_armor_distance_;
 
@@ -66,14 +68,18 @@ private:
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_tracker_srv_;
 
   ///////
-  int highest_level = 3;
-  int priority_level = 0;
-  int   sentry_decision = 0;//用于判断哨兵击打策略
-  int   armors_num = 4;   //用于击打目标建模
+  int respond_time = 0; //用于设置响应时间
+  int highest_level = 3; //从3开始检索当前所有装甲板的优先级，从0开始,优先级依次下降
+  int priority_level = 0; //当前优先级
+  int sentry_decision = 0;//用于判断对敌方哨兵击打策略
+  int armors_num = 4;   //用于击打目标建模
   float robo_yaw=0;   //储存下位机回传的当前yaw值
-  float diff_control; // 控制因为距离带来的pnp垂直误差
-  float yaw_control = 0; //用于人工控制yaw
-  float spinning_diff = 0.0; //用于判断敌方是否为小陀螺，更改开火逻辑
+  float diff_control = 0.0; // 控制因为距离带来的pnp垂直误差
+  float yaw_control = 0.0; //用于人工控制yaw
+  float v_judge = 0.0; //用于判断敌方是否为小陀螺，更改开火逻辑
+  float v_yaw_judge = 0.0; //同上
+  float fire_judge = 0.0; //用于判断 是否对低转速进行开火
+  
  
   // Subscriber with tf2 message_filter
   std::string target_frame_;

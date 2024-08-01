@@ -34,8 +34,8 @@
     max_armor_distance: 10.0
 
     ekf:
-      sigma2_q_xyz_max: 3.0
-      sigma2_q_xyz_min: 1.0
+      sigma2_q_xyz_max: 4.0
+      sigma2_q_xyz_min: 2.0
       sigma2_q_yaw_max: 6.0
       sigma2_q_yaw_min: 3.0
       sigma2_q_r: 40.0
@@ -50,4 +50,6 @@
       lost_time_thres: 1.0
       pitch_diff: 0.2
       yaw_diff: -0.4
-      spinning_diff: 0.08
+      v_judge: 0.08
+      v_yaw_judge: 3.0
+      respond_time: 40

@@ -118,9 +118,8 @@ public:
     void GimbalControlTransform(float xw, float yw, float zw,
                                float vxw, float vyw, float vzw,float v_yaw,
                                 float r1,float r2,float dz,int armors_num,float yaw, float *aim_x, 
-                                float *aim_y, float *aim_z ,float *fire,float robo_yaw,float v);
-
-    void zero_cross_detector(float& yaw_diff);      
+                                float *aim_y, float *aim_z ,float *fire,float robo_yaw,int respond_time, float v,float v_judge, float v_yaw_judge);
+   
     void limit_yaw_range(float& pre_yaw);               
 
 };

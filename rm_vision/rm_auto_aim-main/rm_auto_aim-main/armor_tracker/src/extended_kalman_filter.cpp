@@ -45,6 +45,13 @@ Eigen::MatrixXd ExtendedKalmanFilter::update(const Eigen::VectorXd & z)
   x_post = x_pri + K * (z - h(x_pri));
   P_post = (I - K * H) * P_pri;
 
+//约束条件 适用于实际情况，降低干扰
+  // if(tracked_id == "outpost"){
+  //   x_post(1) = 0;
+  //   x_post(3) = 0;
+  //   x_post(5) = 0;
+  // }
+
   return x_post;
 }
 
